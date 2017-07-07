@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"reflect"
 
 	"github.com/unixpickle/essentials"
 	"github.com/unixpickle/serializer"
@@ -52,22 +51,4 @@ func WriteTable(w io.Writer, objs <-chan serializer.Serializer) (err error) {
 		return err
 	}
 	return binary.Write(w, byteOrder, int64(len(offsets)))
-}
-
-// WriteTableAny is like WriteTable, but the channel can
-// be of any type as long as the objects are serializers.
-func WriteTableAny(w io.Writer, objs interface{}) (err error) {
-	converted := make(chan serializer.Serializer, 1)
-	go func() {
-		defer close(converted)
-		val := reflect.ValueOf(objs)
-		for {
-			obj, ok := val.Recv()
-			if !ok {
-				return
-			}
-			converted <- obj.Interface().(serializer.Serializer)
-		}
-	}()
-	return WriteTable(w, converted)
 }

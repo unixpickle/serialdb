@@ -55,6 +55,15 @@ func TestTable(t *testing.T) {
 		} else if !reflect.DeepEqual(entry, objects[j]) {
 			t.Errorf("index %d: expected %#v but got %#v", j, objects[j], entry)
 		}
+		var someObj *serialObject
+		if err := GetAny(table, int64(j), &someObj); err != nil {
+			t.Error(err)
+		}
+		if err != nil {
+			t.Error(err)
+		} else if !reflect.DeepEqual(someObj, objects[j]) {
+			t.Errorf("index %d: expected %#v but got %#v", j, objects[j], someObj)
+		}
 	}
 }
 
