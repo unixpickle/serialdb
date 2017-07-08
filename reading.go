@@ -1,6 +1,7 @@
 package serialdb
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -61,6 +62,60 @@ func OpenTable(f io.ReadSeeker) (table Table, err error) {
 	}, nil
 }
 
+// ReadTable reads all of the entries in a table
+// asynchronously.
+func ReadTable(ctx context.Context, f io.ReadSeeker) (<-chan serializer.Serializer,
+	<-chan error) {
+	outChan := make(chan serializer.Serializer, 1)
+	errChan := make(chan error, 1)
+	rawErrChan := make(chan error, 1)
+	go func() {
+		defer close(errChan)
+		for err := range rawErrChan {
+			errChan <- essentials.AddCtx("read table", err)
+		}
+	}()
+
+	go func() {
+		defer close(rawErrChan)
+		defer close(outChan)
+
+		tableObj, err := OpenTable(f)
+		if err != nil {
+			rawErrChan <- err
+			return
+		}
+		table := tableObj.(*fileTable)
+		count := table.Len()
+
+		off, err := table.objectOffset(0)
+		if err != nil {
+			rawErrChan <- err
+			return
+		}
+		if _, err := f.Seek(off, io.SeekStart); err != nil {
+			rawErrChan <- err
+			return
+		}
+
+		for i := int64(0); i < count; i++ {
+			obj, err := table.readObject()
+			if err != nil {
+				rawErrChan <- err
+				return
+			}
+			select {
+			case outChan <- obj:
+			case <-ctx.Done():
+				rawErrChan <- ctx.Err()
+				return
+			}
+		}
+	}()
+
+	return outChan, errChan
+}
+
 type fileTable struct {
 	file          io.ReadSeeker
 	length        int64
@@ -82,19 +137,35 @@ func (f *fileTable) Get(index int64) (obj serializer.Serializer, err error) {
 		panic("index out of bounds")
 	}
 
-	// Find the offset of the tweet.
+	objectOffset, err := f.objectOffset(index)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := f.file.Seek(objectOffset, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return f.readObject()
+}
+
+func (f *fileTable) Close() error {
+	if closer, ok := f.file.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
+func (f *fileTable) objectOffset(index int64) (int64, error) {
 	off := f.indicesOffset + 8*index
 	if _, err := f.file.Seek(off, io.SeekStart); err != nil {
-		return nil, err
+		return 0, err
 	}
 	if err := binary.Read(f.file, byteOrder, &off); err != nil {
-		return nil, err
+		return 0, err
 	}
+	return off, nil
+}
 
-	// Read the tweet.
-	if _, err := f.file.Seek(off, io.SeekStart); err != nil {
-		return nil, err
-	}
+func (f *fileTable) readObject() (serializer.Serializer, error) {
 	var dataLen int16
 	if err := binary.Read(f.file, byteOrder, &dataLen); err != nil {
 		return nil, err
@@ -104,11 +175,4 @@ func (f *fileTable) Get(index int64) (obj serializer.Serializer, err error) {
 		return nil, err
 	}
 	return f.deserializer(payload)
-}
-
-func (f *fileTable) Close() error {
-	if closer, ok := f.file.(io.Closer); ok {
-		return closer.Close()
-	}
-	return nil
 }

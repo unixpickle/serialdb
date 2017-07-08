@@ -2,6 +2,7 @@ package serialdb
 
 import (
 	"bytes"
+	"context"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -15,29 +16,8 @@ func init() {
 }
 
 func TestTable(t *testing.T) {
-	var buf bytes.Buffer
-
-	objects := []*serialObject{
-		{Name: "joe", ID: "123", Body: "i love monkeys"},
-		{Name: "james", ID: "321", Body: "joe loves monkeys"},
-		{Name: "alex", ID: "1337", Body: "james knows joe loves monkeys"},
-		{Name: "jon", ID: "666", Body: "alex hates monkeys"},
-		{Name: "dave", ID: "111", Body: "I am a monkey"},
-		{Name: "james", ID: "222", Body: "I am a bot"},
-		{Name: "bill", ID: "123123123", Body: "my spirit animal is a lion"},
-		{Name: "bob", ID: "surprise!", Body: "i despise tacos"},
-		{Name: "steve", ID: "", Body: "and i despise bob"},
-	}
-	objChan := make(chan *serialObject, len(objects))
-	for _, o := range objects {
-		objChan <- o
-	}
-	close(objChan)
-	if err := WriteTableAny(&buf, objChan); err != nil {
-		t.Fatal(err)
-	}
-
-	reader := bytes.NewReader(buf.Bytes())
+	data, objects := testingTableData(t)
+	reader := bytes.NewReader(data)
 	table, err := OpenTable(reader)
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +45,46 @@ func TestTable(t *testing.T) {
 			t.Errorf("index %d: expected %#v but got %#v", j, objects[j], someObj)
 		}
 	}
+}
+
+func TestReadTable(t *testing.T) {
+	data, objects := testingTableData(t)
+	reader := bytes.NewReader(data)
+	stream, errChan := ReadTable(context.Background(), reader)
+	var readObjects []*serialObject
+	for obj := range stream {
+		readObjects = append(readObjects, obj.(*serialObject))
+	}
+	if err := <-errChan; err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(objects, readObjects) {
+		t.Errorf("expected %#v but got %#v", objects, readObjects)
+	}
+}
+
+func testingTableData(t *testing.T) ([]byte, []*serialObject) {
+	var buf bytes.Buffer
+	objects := []*serialObject{
+		{Name: "joe", ID: "123", Body: "i love monkeys"},
+		{Name: "james", ID: "321", Body: "joe loves monkeys"},
+		{Name: "alex", ID: "1337", Body: "james knows joe loves monkeys"},
+		{Name: "jon", ID: "666", Body: "alex hates monkeys"},
+		{Name: "dave", ID: "111", Body: "I am a monkey"},
+		{Name: "james", ID: "222", Body: "I am a bot"},
+		{Name: "bill", ID: "123123123", Body: "my spirit animal is a lion"},
+		{Name: "bob", ID: "surprise!", Body: "i despise tacos"},
+		{Name: "steve", ID: "", Body: "and i despise bob"},
+	}
+	objChan := make(chan *serialObject, len(objects))
+	for _, o := range objects {
+		objChan <- o
+	}
+	close(objChan)
+	if err := WriteTableAny(&buf, objChan); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes(), objects
 }
 
 type serialObject struct {
