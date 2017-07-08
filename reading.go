@@ -166,7 +166,7 @@ func (f *fileTable) objectOffset(index int64) (int64, error) {
 }
 
 func (f *fileTable) readObject() (serializer.Serializer, error) {
-	var dataLen int16
+	var dataLen int64
 	if err := binary.Read(f.file, byteOrder, &dataLen); err != nil {
 		return nil, err
 	}
