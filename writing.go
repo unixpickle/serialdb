@@ -1,6 +1,7 @@
 package serialdb
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -9,9 +10,13 @@ import (
 	"github.com/unixpickle/serializer"
 )
 
-// WriteTable writes the objects to a Table file.
+// WriteTable converts the objects into a Table and writes
+// the results to w.
 func WriteTable(w io.Writer, objs <-chan serializer.Serializer) (err error) {
 	defer essentials.AddCtxTo("write table", &err)
+
+	bufWriter := bufio.NewWriter(w)
+
 	var offsets []int64
 	var curOffset int64
 	var serializerType string
@@ -19,10 +24,10 @@ func WriteTable(w io.Writer, objs <-chan serializer.Serializer) (err error) {
 		if serializerType == "" {
 			serializerType = obj.SerializerType()
 			typeLen := int32(len(serializerType))
-			if err := binary.Write(w, byteOrder, typeLen); err != nil {
+			if err := binary.Write(bufWriter, byteOrder, typeLen); err != nil {
 				return err
 			}
-			n, err := io.WriteString(w, serializerType)
+			n, err := io.WriteString(bufWriter, serializerType)
 			if err != nil {
 				return err
 			}
@@ -35,17 +40,20 @@ func WriteTable(w io.Writer, objs <-chan serializer.Serializer) (err error) {
 		data, err := obj.Serialize()
 		if err != nil {
 			return err
-		} else if err := binary.Write(w, byteOrder, int64(len(data))); err != nil {
+		} else if err := binary.Write(bufWriter, byteOrder, int64(len(data))); err != nil {
 			return err
 		}
-		if _, err := w.Write(data); err != nil {
+		if _, err := bufWriter.Write(data); err != nil {
 			return err
 		}
 		offsets = append(offsets, curOffset)
 		curOffset += int64(len(data) + 8)
 	}
-	if err := binary.Write(w, byteOrder, offsets); err != nil {
+	if err := binary.Write(bufWriter, byteOrder, offsets); err != nil {
 		return err
 	}
-	return binary.Write(w, byteOrder, int64(len(offsets)))
+	if err := binary.Write(bufWriter, byteOrder, int64(len(offsets))); err != nil {
+		return err
+	}
+	return bufWriter.Flush()
 }
