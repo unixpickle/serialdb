@@ -63,6 +63,24 @@ func TestReadTable(t *testing.T) {
 	}
 }
 
+func TestEmptyTable(t *testing.T) {
+	var buf bytes.Buffer
+	objs := make(chan serializer.Serializer, 1)
+	close(objs)
+	if err := WriteTable(&buf, objs); err != nil {
+		t.Fatal(err)
+	}
+	reader := bytes.NewReader(buf.Bytes())
+	table, err := OpenTable(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if table.Len() != 0 {
+		t.Errorf("expected length 0 but got %d", table.Len())
+	}
+	table.Close()
+}
+
 func testingTableData(t *testing.T) ([]byte, []*serialObject) {
 	var buf bytes.Buffer
 	objects := []*serialObject{

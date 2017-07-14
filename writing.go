@@ -49,6 +49,17 @@ func WriteTable(w io.Writer, objs <-chan serializer.Serializer) (err error) {
 		offsets = append(offsets, curOffset)
 		curOffset += int64(len(data) + 8)
 	}
+
+	// Deal with an empty table.
+	if serializerType == "" {
+		if err := binary.Write(bufWriter, byteOrder, int32(6)); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(bufWriter, "string"); err != nil {
+			return err
+		}
+	}
+
 	if err := binary.Write(bufWriter, byteOrder, offsets); err != nil {
 		return err
 	}
